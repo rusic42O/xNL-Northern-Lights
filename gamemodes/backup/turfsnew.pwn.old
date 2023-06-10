@@ -1,0 +1,1708 @@
+/*
+    daddyDOT's script collection...
+    Scripts: turfs.pwn
+    https://github.com/daddyDOT/dot-scripts
+*/
+
+// Y_hooks-include;
+#include <YSI_Coding\y_hooks>
+
+// Macros;
+#define MAX_TURFS                       (8)
+#define MIN_GANG_MEMBERS                (0)
+#define INVALID_TURF_ID                (-1)
+#define TURF_ATTACK_TIME            (60*10) // seconds;
+#define MAX_TURF_NPCS                   (6) // max value (6)
+#define TURF_FREE_COLOR        (0xD1D1D199)
+#define MAX_NPC_HEALTH                (300)
+
+#define TURF_BENEFIT_MONEY              (0)
+#define TURF_BENEFIT_MATS               (1)
+
+// Enumerators;
+enum E_TURF_INFO
+{
+    g_TurfID,
+    g_TArea,
+    g_TLevel,
+    g_TFID,
+    g_TCooldown,
+    g_TBenefit,
+    g_TBQuant,
+    Float:TminX,
+    Float:TmaxX,
+    Float:TminY,
+    Float:TmaxY
+}
+
+// Variables;
+new
+    TurfInfo[MAX_TURFS][E_TURF_INFO],
+    bool:TurfNPC[MAX_PLAYERS],
+    g_TurfRemainingNPCs[MAX_TURFS],
+    g_TurfTimer[MAX_TURFS],
+    g_FollowingPlayer[MAX_PLAYERS],
+    EditingTurf[MAX_PLAYERS],
+    EditingType[MAX_PLAYERS],
+    tempNPCs[MAX_PLAYERS][2],
+    FirstSpawn[MAX_PLAYERS],
+
+    Float:g_NPCX[MAX_PLAYERS],
+    Float:g_NPCY[MAX_PLAYERS],
+    Float:g_NPCZ[MAX_PLAYERS],
+    Iterator:g_TActors[MAX_TURFS]<MAX_PLAYERS>,
+    PlayerText:TurfAttackTD[MAX_PLAYERS][6],
+
+    bool:OnActiveTurf[MAX_PLAYERS],
+
+    g_PlayerAttacking[MAX_PLAYERS],
+    Iterator:TurfPlayers[MAX_TURFS]<MAX_PLAYERS>,
+    g_TurfAttackTime,
+    KilledNPCTime[MAX_TURFS],
+    BenefitActor[MAX_TURFS]
+;
+
+static enum E_BENEFIT_ROOM_INFO {
+    Float:E_BENEFIT_ROOM_X,
+    Float:E_BENEFIT_ROOM_Y,
+    Float:E_BENEFIT_ROOM_Z,
+}
+
+new BenefitRooms[8][E_BENEFIT_ROOM_INFO] = {
+        {2729.5093, -2451.4998, 17.5882},
+        {921.7243, -1299.1215, 14.0954 },
+        {1936.8339, -1104.7305, 26.4561},
+        {2056.0926, -2009.0284, 13.5544},
+        {192.7755, -1747.4739, 4.2642},
+        {2179.9116, -1471.3308, 25.5372},
+        {2499.4744, -947.2207, 82.5496 },
+        {2724.5957, -1826.1245, 11.8211}
+    }
+;
+
+// Hooks;
+hook OnGameModeInit()
+{
+    mysql_tquery(gConn, "SELECT * FROM turfs", "mysql_load_turfs");
+
+    SetPreciseTimer("TurfAward", 60000*60, true);
+
+    CreateDynamicObject(1535, 2056.45557, -2008.26733, 12.50780,   0.00000, 0.00000, -90.00000);
+    CreateDynamicObject(25, 2729.50928, -2451.49976, 17.58820,   90.00000, 0.00000, 0.00000);
+
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+hook OnPlayerConnect(playerid)
+{
+    for(new i = 0; i < MAX_TURFS; i++)
+    {
+        foreach(new j : g_TActors[i])
+        {
+            FCNPC_HideInTabListForPlayer(j, playerid);
+        }
+        if(i < 6)
+        {
+            PlayerTextDrawHide(playerid, TurfAttackTD[playerid][i]);
+            TurfAttackTD[playerid][i] = INVALID_PLAYER_TEXT_DRAW;
+        }
+        
+    }
+
+    EditingTurf[playerid] =
+    g_PlayerAttacking[playerid] = INVALID_TURF_ID;
+    tempNPCs[playerid][0] =
+    tempNPCs[playerid][1] =
+    g_FollowingPlayer[playerid] = INVALID_PLAYER_ID;
+    EditingType[playerid] = 0;
+    OnActiveTurf[playerid] = false;
+
+    FirstSpawn[playerid] = true;
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+hook OnPlayerSpawn(playerid)
+{
+    CallLocalFunction("OnTurfsStreamInForPlayer", "i", playerid);
+
+    if(FirstSpawn[playerid])
+    {
+        if(GetPlayerFactionID(playerid) != -1)
+        {
+            for(new i = 0; i < MAX_TURFS; i++)
+            {
+                if(TurfInfo[i][g_TFID] == GetPlayerFactionID(playerid) && g_TurfRemainingNPCs[i] < 1)
+                {
+                    AttackTextDraws(playerid, true);
+                    SendClientMessagef(playerid, 0xfffc5cFF, "(turf-alert) {FFFFFF}Vasa zona \"{D1D1D1}%i{FFFFFF}\" je pod napadom!", i);
+                    CallLocalFunction("UpdateZoneFlash", "ii", playerid, i);
+                    break;
+                }
+            }
+        }
+        FirstSpawn[playerid] = false;
+    }
+
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+hook OnPlayerPause(playerid)
+{
+    if(g_PlayerAttacking[playerid] != INVALID_TURF_ID)
+    {
+        SetPreciseTimer("CheckPause", 10000, false, "ii", playerid, g_PlayerAttacking[playerid]);
+    }
+
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+public FCNPC_OnUpdate(npcid)
+{
+    new
+        Float:x,
+        Float:y,
+        Float:z,
+        Float:X,
+        Float:Y,
+        Float:Z,
+        turfid = GetTurfByNPC(npcid),
+        movepath
+    ;
+    FCNPC_GetPosition(npcid, x, y, z);
+
+    if(!TurfNPC[npcid])
+        return 1;
+
+    if(turfid == INVALID_TURF_ID)
+        return 1;
+
+    if(g_FollowingPlayer[npcid] != INVALID_PLAYER_ID)
+    {
+        if(GetPlayerFactionID(g_FollowingPlayer[npcid]) == TurfInfo[turfid][g_TFID])
+        {
+            FCNPC_Stop(npcid);
+            FCNPC_StopAim(npcid);
+
+            movepath = FCNPC_CreateMovePath();
+            FCNPC_AddPointToMovePath(movepath, g_NPCX[npcid], g_NPCY[npcid], g_NPCZ[npcid]);
+            
+            FCNPC_GoByMovePath(npcid, movepath, 0, FCNPC_MOVE_TYPE_SPRINT, FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_COLANDREAS, FCNPC_MOVE_PATHFINDING_RAYCAST);
+
+            g_FollowingPlayer[npcid] = INVALID_PLAYER_ID;
+
+            return 1;
+        }
+        if(!IsPlayerInRangeOfPoint(g_FollowingPlayer[npcid], 6.0, x, y, z) && IsPlayerConnected(g_FollowingPlayer[npcid]) && !IsPlayerNPC(g_FollowingPlayer[npcid]))
+        {
+            FCNPC_Stop(npcid);
+            FCNPC_StopAim(npcid);
+            
+            GetPlayerPos(g_FollowingPlayer[npcid], X, Y, Z);
+            FCNPC::GoToCol(npcid, X, Y, Z, FCNPC_MOVE_TYPE_SPRINT, FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_AUTO, 0.0, true, 4.0);
+        }
+    }
+
+    return true;
+}
+
+hook OnPlayerStateChange(playerid, newstate, oldstate)
+{
+    new
+        areasid[1],
+        areaid
+    ;
+
+    if(oldstate == PLAYER_STATE_DRIVER && newstate == PLAYER_STATE_ONFOOT && !IsAdmin(playerid, 1) && !IsHelper(playerid, 1))
+    {
+        if(IsPlayerInAnyDynamicArea(playerid))
+        {
+            GetPlayerDynamicAreas(playerid, areasid[0]);
+
+            areaid = areasid[0];
+
+            new
+                turfid = GetTurfByArea(areaid),
+                Float:X, Float:Y, Float:Z
+            ;
+
+            GetPlayerPos(playerid, X, Y, Z);
+
+            if(turfid == INVALID_TURF_ID)
+                return 1;
+
+            if(g_TurfRemainingNPCs[turfid] < 1)
+                return 1;
+
+            if(GetPlayerFactionID(playerid) != -1 && !Iter_Contains(TurfPlayers[turfid], playerid))
+                Iter_Add(TurfPlayers[turfid], playerid);
+
+            foreach(new i : g_TActors[turfid])
+            {
+                if(FCNPC_IsMovingAtPlayer(i, playerid))
+                    return 1;
+            }
+
+            GetClosestFreeNPC(turfid, playerid);
+
+            for(new i = 0; i < 2; i++)
+            {
+                if(tempNPCs[playerid][i] != INVALID_PLAYER_ID)
+                {
+                    FCNPC_Stop(tempNPCs[playerid][i]);
+                    FCNPC_StopAim(tempNPCs[playerid][i]);
+
+                    FCNPC::GoToCol(tempNPCs[playerid][i], X, Y, Z, FCNPC_MOVE_TYPE_SPRINT , FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_AUTO, 0.0, true, 4.0);
+                    g_FollowingPlayer[tempNPCs[playerid][i]] = playerid;
+                    tempNPCs[playerid][i] = INVALID_PLAYER_ID;
+                }
+            }
+        }
+    }
+
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+hook OnPlayerEnterDynArea(playerid,STREAMER_TAG_AREA:areaid)
+{
+    new
+        Float:X,
+        Float:Y,
+        Float:Z,
+        turfid = GetTurfByArea(areaid)
+    ;
+    
+    if(turfid == INVALID_TURF_ID)
+        return 1;
+
+    if(TurfInfo[turfid][g_TFID] != -1)
+        SendClientMessagef(playerid, 0xfffc5cFF, "(turf) {FFFFFF}Usli ste u zonu ID \'{D1D1D1}%i{FFFFFF}\' koju drzi organizacija \'{D1D1D1}%s{FFFFFF}\'", turfid, FACTIONS[TurfInfo[turfid][g_TFID]][f_tag]);
+
+    else
+        SendClientMessagef(playerid, 0xfffc5cFF, "(turf) {FFFFFF}Usli ste u zonu ID \'{D1D1D1}%i{FFFFFF}\' koja je \'{D1D1D1}Slobodna{FFFFFF}\'", turfid);
+
+    if(GetPlayerState(playerid) == PLAYER_STATE_DRIVER && IsVehicleHelicopter(GetVehicleModel(GetPlayerVehicleID(playerid))))
+        return 1;
+
+    if (IsAdmin(playerid, 1) || IsHelper(playerid, 1))
+        return 1;
+
+    if(GetPlayerFactionID(playerid) != -1)
+        Iter_Add(TurfPlayers[turfid], playerid);
+
+    GetPlayerPos(playerid, X, Y, Z);
+
+    if(g_TurfRemainingNPCs[turfid] < 1)
+        OnActiveTurf[playerid] = true;
+
+    if(TurfInfo[turfid][g_TFID] != GetPlayerFactionID(playerid))
+    {
+        tempNPCs[playerid][0] = tempNPCs[playerid][1] = INVALID_PLAYER_ID;
+
+        GetClosestFreeNPC(turfid, playerid);
+
+        for(new i = 0; i < 2; i++)
+        {
+            if(tempNPCs[playerid][i] != INVALID_PLAYER_ID)
+            {
+                FCNPC_Stop(tempNPCs[playerid][i]);
+                FCNPC_StopAim(tempNPCs[playerid][i]);
+
+                FCNPC::GoToCol(tempNPCs[playerid][i], X, Y, Z, FCNPC_MOVE_TYPE_SPRINT , FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_AUTO, 0.0, true, 4.0);
+                g_FollowingPlayer[tempNPCs[playerid][i]] = playerid;
+            }
+        }
+
+        tempNPCs[playerid][0] = tempNPCs[playerid][1] = INVALID_PLAYER_ID;
+    }
+
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+public FCNPC_OnReachDestination(npcid)
+{
+    if(g_FollowingPlayer[npcid] == INVALID_PLAYER_ID)
+        return 1;
+
+    FCNPC_Stop(npcid);
+    FCNPC_StopAim(npcid);
+    FCNPC_StopAttack(npcid);
+
+    if(IsPlayerConnected(g_FollowingPlayer[npcid]) && !IsPlayerNPC(g_FollowingPlayer[npcid]))
+        FCNPC_AimAtPlayer(npcid, g_FollowingPlayer[npcid], true, 1, true, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, FCNPC_ENTITY_MODE_COLANDREAS, FCNPC_ENTITY_CHECK_PLAYER);
+
+    return true;
+}
+
+hook OnPlayerLeaveDynArea(playerid,STREAMER_TAG_AREA:areaid)
+{
+    new
+        turfid = GetTurfByArea(areaid),
+        movepath[MAX_PLAYERS]
+    ;
+    
+    if(turfid == INVALID_TURF_ID)
+        return 1;
+
+    if (IsAdmin(playerid, 1) || IsHelper(playerid, 1))
+        return 1;
+
+    if(g_TurfRemainingNPCs[turfid] < 1)
+        OnActiveTurf[playerid] = false;
+
+    if(GetPlayerFactionID(playerid) != -1 && Iter_Contains(TurfPlayers[turfid], playerid))
+        Iter_Remove(TurfPlayers[turfid], playerid);
+
+    if(TurfInfo[turfid][g_TFID] != PI[playerid][p_org_id] || GetPlayerFactionID(playerid) == -1)
+    {
+        foreach(new i : g_TActors[turfid])
+        {   
+            if(g_FollowingPlayer[i] != playerid)
+                continue;
+             
+            FCNPC_Stop(i);
+            FCNPC_StopAim(i);
+
+            movepath[i] = FCNPC_CreateMovePath();
+            FCNPC_AddPointToMovePath(movepath[i], g_NPCX[i], g_NPCY[i], g_NPCZ[i]);
+            
+            FCNPC_GoByMovePath(i, movepath[i], 0, FCNPC_MOVE_TYPE_SPRINT, FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_COLANDREAS, FCNPC_MOVE_PATHFINDING_RAYCAST);
+
+            //FCNPC_GoTo(i, g_NPCX[i], g_NPCY[i], g_NPCZ[i], FCNPC_MOVE_TYPE_SPRINT, FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_COLANDREAS, FCNPC_MOVE_PATHFINDING_RAYCAST, 0.0, true, 0.0);
+
+            g_FollowingPlayer[i] = INVALID_PLAYER_ID;
+        }
+    }
+
+    new
+        count,
+        Float:X,
+        Float:Y,
+        Float:Z
+    ;
+
+    foreach(new id : TurfPlayers[turfid])
+    {
+        count = 0;
+        foreach(new npcid : g_TActors[turfid])
+        {
+            if(g_FollowingPlayer[npcid] == id)
+                count++;
+        }
+
+        GetPlayerPos(id, X, Y, Z);
+
+        if(count == 2)
+            continue;
+
+        if(count == 0)
+            count = 2;
+
+        GetClosestFreeNPC(turfid, id);
+        for(new j = 0; j < count; j++)
+        {
+            if(tempNPCs[id][j] != INVALID_PLAYER_ID)
+            {
+                FCNPC_Stop(tempNPCs[id][j]);
+                FCNPC_StopAim(tempNPCs[id][j]);
+                FCNPC::GoToCol(tempNPCs[id][j], X, Y, Z, FCNPC_MOVE_TYPE_SPRINT, FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_AUTO, 0.0, true, 4.0);
+                g_FollowingPlayer[tempNPCs[id][j]] = id;
+                tempNPCs[id][j] = INVALID_PLAYER_ID;
+            }
+        }
+    }
+
+    if(g_PlayerAttacking[playerid] == turfid)
+        return StopTurfAttack(turfid, playerid, "Napustili ste zonu.");
+
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+hook FCNPC_OnGiveDamage(npcid, damagedid, Float:amount, weaponid, bodypart)
+{
+    if(IsPlayerNPC(damagedid))
+        return 1;
+
+    InflictDamage(damagedid, 100.0, npcid, weaponid, bodypart);
+
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+hook FCNPC_OnDeath(npcid, killerid, reason)
+{
+    new
+        turfid = GetTurfByNPC(npcid),
+        Float:X,
+        Float:Y,
+        Float:Z
+    ;
+
+    if(turfid == INVALID_TURF_ID)
+        return 1;
+    
+    /*if (killerid != INVALID_PLAYER_ID && !FCNPC_IsStreamedIn(killerid, npcid)) {
+		SetPreciseTimer("RespawnTurfNPCs", 250, false, "i", turfid);
+        return 1;
+	}*/
+
+    g_TurfRemainingNPCs[turfid] -= 1;
+
+    g_FollowingPlayer[npcid] = INVALID_PLAYER_ID;
+    
+    FCNPC_Stop(npcid);
+    FCNPC_StopAim(npcid);
+
+    if(g_TurfRemainingNPCs[turfid] == 5)
+        KilledNPCTime[turfid] = SetPreciseTimer("AttackInTime", 30*60*1000, false, "i", turfid); // 30m = 30*60s = 30*60*1000ms
+
+    if(GetPlayerFactionID(killerid) == TurfInfo[turfid][g_TFID])
+        return SendClientMessagef(killerid, 0xFF0000FF, "(turf) {FFFFFF}Ubio si svog gang membera, bices kaznjen!!!");
+    
+    if(g_TurfRemainingNPCs[turfid] != 0)
+    {
+        new
+            count
+        ;
+        foreach(new i : TurfPlayers[turfid])
+        {
+            count = 0;
+            foreach(new j : g_TActors[turfid])
+            {
+                if(FCNPC_IsMovingAtPlayer(j, i) || FCNPC_IsAimingAtPlayer(j, i))
+                    count++;
+            }
+
+            if(count >= 2)
+                continue;
+
+            GetClosestFreeNPC(turfid, i, false);
+            if(tempNPCs[i][0] != INVALID_PLAYER_ID)
+            {
+                GetPlayerPos(i, X, Y, Z);
+                FCNPC_Stop(tempNPCs[i][0]);
+                FCNPC_StopAim(tempNPCs[i][0]);
+
+                FCNPC::GoToCol(tempNPCs[i][0], X, Y, Z, FCNPC_MOVE_TYPE_SPRINT, FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_AUTO, 0.0, true, 4.0);
+                g_FollowingPlayer[tempNPCs[i][0]] = i;
+            }
+            tempNPCs[i][0] = INVALID_PLAYER_ID;
+        }
+        SendClientMessagef(killerid, 0xfffc5cFF, "(turf) {FFFFFF}Ubij jos \'{fffc5c}%i{FFFFFF}\' NPCeva da zapocnes zauzimanje.", g_TurfRemainingNPCs[turfid]);
+    }
+    else
+    {
+        new
+            gangmembers = 0,
+            h,
+            m,
+            s
+        ;
+
+        gettime(h,m,s);
+        if (h > 0 && h < 9)
+            return StopTurfAttack(turfid, killerid, "Ne mozete zauzimati zone izmedju 01h i 09h ujutro.", false);
+
+        foreach(new i : TurfPlayers[turfid])
+        {
+            if(GetPlayerFactionID(killerid) == GetPlayerFactionID(i))
+                gangmembers++;
+        }
+
+        if(IsAdmin(killerid, 1) || IsHelper(killerid, 1))
+            return StopTurfAttack(turfid, killerid, "Clanovi staff tima nemaju pravo ucestvovati na zonama.");
+
+        if(GetPlayerFactionID(killerid) == -1)
+            return StopTurfAttack(turfid, killerid, "Vi niste clan ilegalne organizacije.");
+
+        if(IsLawFaction(GetPlayerFactionID(killerid)))
+            return StopTurfAttack(turfid, killerid, "Organizacije pravde ne mogu ici na zone.");
+
+        if(!IsPlayerInDynamicArea(killerid, TurfInfo[turfid][g_TArea]))
+            return StopTurfAttack(turfid, killerid, "Moras biti u zoni da zapocnes zauzimanje.");
+
+        if(gangmembers < MIN_GANG_MEMBERS)
+            return StopTurfAttack(turfid, killerid, "Nema dovoljno tvojih clanova u zoni.");
+
+        if(gettime() < TurfInfo[turfid][g_TCooldown])
+            return StopTurfAttack(turfid, killerid, "Ne mozete zauzeti ovu zonu, cooldown jos traje.", false);
+
+        if(g_TurfAttackTime != TURF_ATTACK_TIME)
+            return StopTurfAttack(turfid, killerid, "Ne mozete zauzimati zonu dok se druga vec zauzima.", false);
+
+        g_PlayerAttacking[killerid] = turfid;
+
+        g_TurfAttackTime = TURF_ATTACK_TIME;
+        g_TurfTimer[turfid] = SetPreciseTimer("TurfInProgress", 1000, true, "iiii", turfid, killerid, GetPlayerFactionID(killerid), TurfInfo[turfid][g_TFID]);
+        GameTextForPlayerf(killerid, 1200, 3, "Zapoceo si zauzimanje teritorije ~y~%i~w~!", turfid);
+        StaffMsg(0xFF0000FF, "(turf-attack) {FFFFFF}Igrac \"{FF0000}%s{FFFFFF}\" je zapoceo zauzimanje teritorije \'{FF0000}%i{FFFFFF}\', {FF0000}/ttp %i", ime_rp[killerid], turfid, turfid);
+        DeletePreciseTimer(KilledNPCTime[turfid]);
+        foreach(new i : Player)
+        {
+            if(GetPlayerFactionID(i) == GetPlayerFactionID(killerid))
+                AttackTextDraws(i, true);
+            
+            else if(GetPlayerFactionID(i) == TurfInfo[turfid][g_TFID] && TurfInfo[turfid][g_TFID] != -1)
+            {
+                SendClientMessagef(i, 0xFF0000FF, "[turf-defend] {FFFFFF}Vasa zona \'%i\' je pod napadom!", turfid);
+                AttackTextDraws(i, true);
+            }
+        }
+
+        new
+            clr = FACTIONS[TurfInfo[turfid][g_TFID]][f_hex]
+        ;
+
+        ZoneFlashForAll(TurfInfo[turfid][g_TurfID], clr);
+    }
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+hook OnPlayerGiveDamage(playerid, damagedid, Float:amount, weaponid, bodypart) // ResyncPlayer se moze koristiti za respawnovanje igraca na potpuno istim koordinatama na kojima se trenutno nalazi
+{
+    if(!IsPlayerNPC(damagedid))
+        return 1;
+
+    if(!TurfNPC[damagedid])
+        return 1;
+
+    /*if(!FCNPC_IsStreamedIn(damagedid, playerid))
+    {
+        StaffMsg(0xFF0000FF, "[WARN] {FFFFFF}Igrac \"{FF0000}%s{FFFFFF}\" je ozlijedio NPCa koji nije ucitan u njegovom clientu, {FF0000}/spec", ime_rp[playerid]);
+        FCNPC_SetHealth(damagedid, FCNPC_GetHealth(damagedid)+amount);
+        
+        if(FCNPC_IsDead(damagedid))
+        {
+            FCNPC_Respawn(damagedid);
+            g_TurfRemainingNPCs[GetTurfByNPC(damagedid)] += 1;
+        }
+        return 1;
+    }*/
+    
+    new
+        turfid = GetTurfByNPC(damagedid)
+    ;
+
+    if(turfid == INVALID_TURF_ID)
+        return 1;
+    
+    if(IsAdmin(playerid, 1) || IsHelper(playerid, 1))
+    {
+        SlapPlayer(playerid, 2.0);
+        SendClientMessage(playerid, 0xFF0000FF, "[STOP] {FFFFFF}Clanovi staff tima se ne smiju mijesati u zone!");
+        AdminMsg(0xfffc5cFF, "(turf-alert) {FFFFFF}Igrac \"{D1D1D1}%s{FFFFFF}\" je pokusao ozlijediti NPC-a na zoni: {D1D1D1}Igrac je clan staff tima!", ime_rp[playerid]);
+        
+        FCNPC_SetHealth(damagedid, FCNPC_GetHealth(damagedid)+amount);
+        return true;
+    }
+
+    if(GetPlayerFactionID(playerid) == TurfInfo[turfid][g_TFID] && TurfInfo[turfid][g_TFID] != -1)
+    {
+        SlapPlayer(playerid, 2.0);
+        SendClientMessage(playerid, 0xFF0000FF, "(turf-alert) {FFFFFF}Napadas svog gang membera, bices kaznjen ukoliko nastavis!");
+        AdminMsg(0xfffc5cFF, "(turf-alert) {FFFFFF}Igrac \"{D1D1D1}%s{FFFFFF}\" je ozlijedio svog NPC-a na zoni \"{D1D1D1}%i{FFFFFF}\"", ime_rp[playerid], turfid);
+        return true;
+    }
+
+    if(IsACop(playerid))
+    {
+        SlapPlayer(playerid, 2.0);
+        SendClientMessage(playerid, 0xFF0000FF, "[STOP] {FFFFFF}Organizacije pravde se ne smiju mijesati u zonu! Za svako mijesanje cete snositi posljedice!");
+        AdminMsg(0xfffc5cFF, "(turf-alert) {FFFFFF}Igrac \"{D1D1D1}%s{FFFFFF}\" je pokusao ozlijediti NPC-a na zoni: {D1D1D1}Igrac je clan policije!", ime_rp[playerid]);
+        
+        FCNPC_SetHealth(damagedid, FCNPC_GetHealth(damagedid)+amount);
+        return true;
+    }
+
+    if(GetPlayerFactionID(playerid) == -1)
+    {
+        SlapPlayer(playerid, 2.0);
+        SendClientMessage(playerid, 0xFF0000FF, "[STOP] {FFFFFF}Obicni igraci se ne smiju mijesati u zonu! Za svako mijesanje cete snositi posljedice!");
+        AdminMsg(0xfffc5cFF, "(turf-alert) {FFFFFF}Igrac \"{D1D1D1}%s{FFFFFF}\" je pokusao ozlijediti NPC-a na zoni: {D1D1D1}Igrac nije clan organizacije!", ime_rp[playerid]);
+        
+        FCNPC_SetHealth(damagedid, FCNPC_GetHealth(damagedid)+amount);
+        return true;
+    }
+    
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+hook OnPlayerDeath(playerid, killerid, reason)
+{
+    if(!IsPlayerNPC(playerid) && IsPlayerNPC(killerid))
+    {
+        new
+            turfid = GetTurfByNPC(killerid),
+            movepath[MAX_PLAYERS]
+        ;
+
+        foreach(new i : g_TActors[turfid])
+        {   
+            if(g_FollowingPlayer[i] != playerid)
+                continue;
+            
+            FCNPC_Stop(i);
+            FCNPC_StopAim(i);
+
+            movepath[i] = FCNPC_CreateMovePath();
+            FCNPC_AddPointToMovePath(movepath[i], g_NPCX[i], g_NPCY[i], g_NPCZ[i]);
+            
+            FCNPC_GoByMovePath(i, movepath[i], 0, FCNPC_MOVE_TYPE_SPRINT, FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_COLANDREAS, FCNPC_MOVE_PATHFINDING_RAYCAST);
+
+            g_FollowingPlayer[i] = INVALID_PLAYER_ID;
+        }
+    }
+
+    OnActiveTurf[playerid] = false;
+
+    if(!IsPlayerAttacking(playerid))
+        return 1;
+
+    StopTurfAttack(g_PlayerAttacking[playerid], playerid, "Igrac koji je zauzimao je ubijen!");
+    g_PlayerAttacking[playerid] = INVALID_TURF_ID;
+    tempNPCs[playerid][0] = tempNPCs[playerid][1] = INVALID_PLAYER_ID;
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+hook OnPlayerDisconnect(playerid, reason)
+{
+    new
+        movepath[MAX_PLAYERS]//,
+        //turfid = g_PlayerAttacking[playerid]
+    ;
+
+    OnActiveTurf[playerid] = false;
+
+    //if(turfid == INVALID_TURF_ID)
+    //    return 1;
+
+    if(!IsPlayerNPC(playerid))
+    {
+        for(new j = 0; j < MAX_TURFS; j++)
+        {
+            foreach(new i : g_TActors[j])
+            {   
+                if(g_FollowingPlayer[i] != playerid)
+                    continue;
+                
+                FCNPC_Stop(i);
+                FCNPC_StopAim(i);
+
+                movepath[i] = FCNPC_CreateMovePath();
+                FCNPC_AddPointToMovePath(movepath[i], g_NPCX[i], g_NPCY[i], g_NPCZ[i]);
+                
+                FCNPC_GoByMovePath(i, movepath[i], 0, FCNPC_MOVE_TYPE_SPRINT, FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_COLANDREAS, FCNPC_MOVE_PATHFINDING_RAYCAST);
+
+                g_FollowingPlayer[i] = INVALID_PLAYER_ID;
+            }
+        }
+    }
+
+    if(!IsPlayerAttacking(playerid))
+        return 1;
+
+    StopTurfAttack(g_PlayerAttacking[playerid], playerid, "Igrac koji je zauzimao je napustio server!");
+    g_PlayerAttacking[playerid] = INVALID_TURF_ID;
+    tempNPCs[playerid][0] = tempNPCs[playerid][1] = INVALID_PLAYER_ID;
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+hook OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
+{
+    if(dialogid == 1)
+    {
+        if(!response)
+        {
+            EditingTurf[playerid] = INVALID_TURF_ID;
+            return 1;
+        }
+
+        EditingTurf[playerid] = listitem;
+
+        new
+            str[28+1]
+        ;
+
+        format(str, sizeof str, "Informacije\nUredi\nTeleport");
+        ShowPlayerDialog(playerid, 2, DIALOG_STYLE_LIST, "Turf Control", str, "Dalje", "Nazad");
+
+        return 1;
+    }
+    else if(dialogid == 2)
+    {
+        if(!response)
+        {
+            EditingTurf[playerid] = INVALID_TURF_ID;
+            return 1;
+        }
+
+        new
+            str[170+1],
+            turfid = EditingTurf[playerid]
+        ;
+
+        switch(listitem)
+        {
+            case 0:
+            {
+                format(str, sizeof str, "Stavka\tVrijednost\nTurf ID\t%i\nFaction ID\t%i\nLevel\t%i\nCooldown\t%isec\nStanje NPCeva\t%i/6\nBenefit\t%s\nKolicina benefita\t%i", turfid, TurfInfo[turfid][g_TFID], TurfInfo[turfid][g_TLevel], (TurfInfo[EditingTurf[playerid]][g_TCooldown] < gettime()) ? 0 : TurfInfo[EditingTurf[playerid]][g_TCooldown]/1000, g_TurfRemainingNPCs[EditingTurf[playerid]], GetBenefitTypeByID(TurfInfo[EditingTurf[playerid]][g_TBenefit]), TurfInfo[EditingTurf[playerid]][g_TBQuant]);
+                ShowPlayerDialog(playerid, 3, DIALOG_STYLE_TABLIST_HEADERS, "Turf Information", str, "Nazad", "");
+            }
+            case 1:
+            {
+                new
+                    attacker = GetAttackerIDForTurf(EditingTurf[playerid])
+                ;
+
+                format(str, sizeof str, "Stavka\tVrijednost\nFaction ID\t%i\nLevel\t%i\nCooldown\t%isec\nRespawnuj NPCeve\t%i mrtvih\nZaustavi zauzimanje\t%s\nBenefit\t%s\nKolicina benefita\t%i", TurfInfo[turfid][g_TFID], TurfInfo[turfid][g_TLevel], (TurfInfo[EditingTurf[playerid]][g_TCooldown] < gettime()) ? 0 : TurfInfo[EditingTurf[playerid]][g_TCooldown]/1000, 6-g_TurfRemainingNPCs[turfid], (attacker == INVALID_PLAYER_ID) ? "{FF0000}Neaktivno" : "{7FFF4A}Aktivno", GetBenefitTypeByID(TurfInfo[EditingTurf[playerid]][g_TBenefit]), TurfInfo[EditingTurf[playerid]][g_TBQuant]);
+                ShowPlayerDialog(playerid, 4, DIALOG_STYLE_TABLIST_HEADERS, "Turf Edit", str, "Izaberi", "Nazad");
+            }
+            case 2:
+            {
+                new
+                    Float:Z
+                ;
+                CA_FindZ_For2DCoord((TurfInfo[EditingTurf[playerid]][TminX]+TurfInfo[EditingTurf[playerid]][TmaxX])/2, (TurfInfo[EditingTurf[playerid]][TminY]+TurfInfo[EditingTurf[playerid]][TmaxY])/2, Z);
+                SetPlayerPos(playerid, (TurfInfo[EditingTurf[playerid]][TminX]+TurfInfo[EditingTurf[playerid]][TmaxX])/2, (TurfInfo[EditingTurf[playerid]][TminY]+TurfInfo[EditingTurf[playerid]][TmaxY])/2, Z+0.8);
+                EditingTurf[playerid] = INVALID_TURF_ID;
+            }
+        }
+        return 1;
+    }
+    else if(dialogid == 4)
+    {
+        if(!response)
+        {
+            EditingTurf[playerid] = INVALID_TURF_ID;
+            return 1;
+        }
+
+        new
+            header[19+1],
+            addonstr[58+1],
+            str[100+1]
+        ;
+        addonstr[0] = EOS;
+        switch(listitem)
+        {
+            case 0:
+            {
+                format(header, sizeof header, "Faction ID");
+                EditingType[playerid] = 1;
+                format(addonstr, sizeof addonstr, "Ukoliko zelite postaviti zonu na slobodnu koristite FID 0.");
+            }
+            case 1:
+            {
+                format(header, sizeof header, "Level");
+                EditingType[playerid] = 2;
+            }
+            case 2:
+            {
+                format(header, sizeof header, "Cooldown");
+                EditingType[playerid] = 3;
+            }
+            case 3:
+            {
+                format(header, sizeof header, "Respawnuj NPCeve");
+                EditingType[playerid] = 4;
+            }
+            case 4:
+            {
+                format(header, sizeof header, "Zaustavi zauzimanje");
+                EditingType[playerid] = 5;
+            }
+            case 5:
+            {
+                format(header, sizeof header, "Promijeni benefit");
+                EditingType[playerid] = 6;
+            }
+            case 6:
+            {
+                format(header, sizeof header, "Promijeni kolicinu benefita");
+                EditingType[playerid] = 7;
+            }
+        }
+
+        format(str, sizeof str, "Unesi novu vrijednost za ovo polje.\n%s", addonstr);
+
+        if(EditingType[playerid] < 3 || EditingType[playerid] > 4)
+            ShowPlayerDialog(playerid, 5, DIALOG_STYLE_INPUT, header, str, "Unesi", "Otkazi");
+
+        else if(EditingType[playerid] == 3)
+            ShowPlayerDialog(playerid, 5, DIALOG_STYLE_INPUT, header, "Unesite broj minuta na koliko zelite da stavite cooldown.", "Unesi", "Otkazi");
+
+        else
+            ShowPlayerDialog(playerid, 5, DIALOG_STYLE_MSGBOX, header, "Da li ste sigurni da zelite izvrsiti ovu akciju?", "Da", "Ne");
+
+        return 1;
+    }
+    else if(dialogid == 5)
+    {
+        if(!response)
+        {
+            EditingTurf[playerid] = INVALID_TURF_ID;
+            EditingType[playerid] = 0;
+            return 1;
+        }
+
+        new
+            admin[25+1],
+            turfid = EditingTurf[playerid]
+        ;
+
+        GetPlayerName(playerid, admin);
+
+        switch(EditingType[playerid])
+        {
+            case 1:
+            {
+                if(strval(inputtext) == -1)
+                    return ErrorMsg(playerid, "Ukoliko zelite postaviti teritoriju na slobodnu, postavite joj ID 0");
+
+                HeadMsg(0xfffc5cFF, "[CHANGE] {FFFFFF}Admin \"{D1D1D1}%s{FFFFFF}\" | Turf \"{D1D1D1}%i{FFFFFF}\" | (fid) \'{D1D1D1}%i{FFFFFF}\' >> \'{D1D1D1}%i{FFFFFF}\'", admin, EditingTurf[playerid], TurfInfo[EditingTurf[playerid]][g_TFID], strval(inputtext));
+                if(strval(inputtext) == 0)
+                    TurfInfo[turfid][g_TFID] = -1;
+                else
+                    TurfInfo[turfid][g_TFID] = strval(inputtext);
+                InfoMsg(playerid, "Uspjesno si izmijenio fakciju teritorije %i na %i", turfid, strval(inputtext));
+                
+                new
+                    color
+                ;
+
+                if(TurfInfo[turfid][g_TFID] != -1)
+                    color = HexToInt(FACTIONS[TurfInfo[turfid][g_TFID]][f_hex]) - 80;
+                else
+                    color = TURF_FREE_COLOR;
+
+                HideZoneForAll(TurfInfo[turfid][g_TurfID]);
+                ShowZoneForAll(TurfInfo[turfid][g_TurfID], color);
+                SetPreciseTimer("RespawnTurfNPCs", 250, false, "i", turfid);
+            }
+            case 2:
+            {
+                if(IsNaN(strval(inputtext)))
+                    return 1;
+                
+                HeadMsg(0xfffc5cFF, "[CHANGE] {FFFFFF}Admin \"{D1D1D1}%s{FFFFFF}\" | Turf \"{D1D1D1}%i{FFFFFF}\" | (level) \'{D1D1D1}%i{FFFFFF}\' >> \'{D1D1D1}%i{FFFFFF}\'", admin, turfid, TurfInfo[turfid][g_TLevel], strval(inputtext));
+                TurfInfo[turfid][g_TLevel] = strval(inputtext);
+                InfoMsg(playerid, "Uspjesno si izmijenio level teritorije %i na %i", turfid, strval(inputtext));
+            }
+            case 3:
+            {
+                if(IsNaN(strval(inputtext)))
+                    return 1;
+                
+                HeadMsg(0xfffc5cFF, "[CHANGE] {FFFFFF}Admin \"{D1D1D1}%s{FFFFFF}\" | Turf \"{D1D1D1}%i{FFFFFF}\" | (cooldown) \'{D1D1D1}%is{FFFFFF}\' >> \'{D1D1D1}%imin{FFFFFF}\'", admin, turfid, (TurfInfo[turfid][g_TCooldown] < gettime()) ? 0 : TurfInfo[turfid][g_TCooldown]/1000, strval(inputtext));
+                TurfInfo[turfid][g_TCooldown] = gettime() + strval(inputtext)*60*1000;
+                InfoMsg(playerid, "Uspjesno si izmijenio cooldown teritorije %i na %imin od trenutnog vremena", turfid, strval(inputtext));
+            }
+            case 4:
+            {
+                HeadMsg(0xfffc5cFF, "[CHANGE] {FFFFFF}Admin \"{D1D1D1}%s{FFFFFF}\" | Turf \"{D1D1D1}%i{FFFFFF}\" | (respawn-npc) old dead npc count \'{D1D1D1}%i{FFFFFF}\'", admin, turfid, MAX_TURF_NPCS-g_TurfRemainingNPCs[turfid]);
+                SetPreciseTimer("RespawnTurfNPCs", 250, false, "i", turfid);
+                InfoMsg(playerid, "Uspjesno si respawnovao sve NPCeve teritorije %i", turfid);
+            }
+            case 5:
+            {
+                new
+                    attacker = GetAttackerIDForTurf(turfid),
+                    attname[25+1]
+                ;
+
+                if(attacker == INVALID_PLAYER_ID)
+                    return SendClientMessage(playerid, 0xFF0000FF, "[ERROR] {FFFFFF}Teritorija se ne zauzima.");
+
+                GetPlayerName(attacker, attname);
+
+                HeadMsg(0xfffc5cFF, "[CHANGE] {FFFFFF}Admin \"{D1D1D1}%s{FFFFFF}\" | Turf \"{D1D1D1}%i{FFFFFF}\" | (stop-attack) \'{D1D1D1}deffid %i / vs / %i attfid \"%s\"{FFFFFF}\'", admin, turfid, TurfInfo[turfid][g_TFID], GetPlayerFactionID(attacker), attname);
+
+                StopTurfAttack(turfid, attacker, "Administrator je prekinuo zauzimanje.");
+                InfoMsg(playerid, "Uspjesno si zaustavio zauzimanje teritorije %i", turfid);
+            }
+            case 6:
+            {
+                if(strval(inputtext) != 0 && strval(inputtext) != 1)
+                    return ErrorMsg(playerid, "Samo dva tipa benefita su moguca (0 - Novac | 1 - Materijali).");
+
+                HeadMsg(0xfffc5cFF, "[CHANGE] {FFFFFF}Admin \"{D1D1D1}%s{FFFFFF}\" | Turf \"{D1D1D1}%i{FFFFFF}\" | (benefit) \'{D1D1D1}%s{FFFFFF}\' >> \'{D1D1D1}%s{FFFFFF}\'", admin, turfid, GetBenefitTypeByID(TurfInfo[turfid][g_TBenefit]), GetBenefitTypeByID(strval(inputtext)));
+                TurfInfo[turfid][g_TBenefit] = strval(inputtext);
+
+                InfoMsg(playerid, "Uspjesno si izmijenio benefit teritorije %i", turfid);
+            }
+            case 7:
+            {
+                if(strval(inputtext) == -1)
+                    return ErrorMsg(playerid, "Nije moguce postaviti kolicinu na -1.");
+
+                HeadMsg(0xfffc5cFF, "[CHANGE] {FFFFFF}Admin \"{D1D1D1}%s{FFFFFF}\" | Turf \"{D1D1D1}%i{FFFFFF}\" | (benefit-quant) \'{D1D1D1}%i{FFFFFF}\' >> \'{D1D1D1}%i{FFFFFF}\'", admin, turfid, TurfInfo[turfid][g_TBQuant], strval(inputtext));
+                TurfInfo[turfid][g_TBQuant] = strval(inputtext);
+
+                InfoMsg(playerid, "Uspjesno si izmijenio kolicinu benefita teritorije %i", turfid);
+            }
+        }
+
+        EditingTurf[playerid] = INVALID_TURF_ID;
+        EditingType[playerid] = 0;
+
+        mysql_format(gConn, upit_128, sizeof upit_128, "UPDATE turfs SET factionID = '%i', level = '%i', benefit = '%i', benefitquant = '%i' WHERE turfID = %d", TurfInfo[turfid][g_TFID], TurfInfo[turfid][g_TLevel], TurfInfo[turfid][g_TBenefit], TurfInfo[turfid][g_TBQuant], turfid+1);
+        mysql_tquery(gConn, upit_128);
+
+        return 1;
+    }
+    return Y_HOOKS_CONTINUE_RETURN_1;
+}
+
+// Additional-callbacks;
+stock AttackTextDraws(playerid, bool:showattacktds)
+{
+    if(showattacktds)
+    {
+        TurfAttackTD[playerid][0] = CreatePlayerTextDraw(playerid, 323.999450, 13.362533, "~y~~h~turf");
+        PlayerTextDrawLetterSize(playerid, TurfAttackTD[playerid][0], 0.250999, 0.991875);
+        PlayerTextDrawAlignment(playerid, TurfAttackTD[playerid][0], 2);
+        PlayerTextDrawColor(playerid, TurfAttackTD[playerid][0], -1);
+        PlayerTextDrawSetShadow(playerid, TurfAttackTD[playerid][0], 0);
+        PlayerTextDrawSetOutline(playerid, TurfAttackTD[playerid][0], 1);
+        PlayerTextDrawBackgroundColor(playerid, TurfAttackTD[playerid][0], 255);
+        PlayerTextDrawFont(playerid, TurfAttackTD[playerid][0], 3);
+        PlayerTextDrawSetProportional(playerid, TurfAttackTD[playerid][0], 1);
+
+        TurfAttackTD[playerid][1] = CreatePlayerTextDraw(playerid, 323.500000, 26.625045, "00:00");
+        PlayerTextDrawLetterSize(playerid, TurfAttackTD[playerid][1], 0.308500, 1.258750);
+        PlayerTextDrawAlignment(playerid, TurfAttackTD[playerid][1], 2);
+        PlayerTextDrawColor(playerid, TurfAttackTD[playerid][1], -1);
+        PlayerTextDrawSetShadow(playerid, TurfAttackTD[playerid][1], 0);
+        PlayerTextDrawSetOutline(playerid, TurfAttackTD[playerid][1], 1);
+        PlayerTextDrawBackgroundColor(playerid, TurfAttackTD[playerid][1], 255);
+        PlayerTextDrawFont(playerid, TurfAttackTD[playerid][1], 3);
+        PlayerTextDrawSetProportional(playerid, TurfAttackTD[playerid][1], 1);
+
+        TurfAttackTD[playerid][2] = CreatePlayerTextDraw(playerid, 312.199920, -0.750000, "");
+        PlayerTextDrawTextSize(playerid, TurfAttackTD[playerid][2], 22.929998, 23.000000);
+        PlayerTextDrawAlignment(playerid, TurfAttackTD[playerid][2], 1);
+        PlayerTextDrawColor(playerid, TurfAttackTD[playerid][2], 255);
+        PlayerTextDrawSetShadow(playerid, TurfAttackTD[playerid][2], 0);
+        PlayerTextDrawFont(playerid, TurfAttackTD[playerid][2], 5);
+        PlayerTextDrawSetProportional(playerid, TurfAttackTD[playerid][2], 0);
+        PlayerTextDrawSetPreviewModel(playerid, TurfAttackTD[playerid][2], 1254);
+        PlayerTextDrawBackgroundColor(playerid, TurfAttackTD[playerid][2], 0x00000000);
+        PlayerTextDrawSetPreviewRot(playerid, TurfAttackTD[playerid][2], 0.000000, 0.000000, 0.000000, 1.000000);
+
+        TurfAttackTD[playerid][3] = CreatePlayerTextDraw(playerid, 315.199981, 0.562500, "");
+        PlayerTextDrawTextSize(playerid, TurfAttackTD[playerid][3], 17.000000, 20.000000);
+        PlayerTextDrawAlignment(playerid, TurfAttackTD[playerid][3], 1);
+        PlayerTextDrawColor(playerid, TurfAttackTD[playerid][3], -1);
+        PlayerTextDrawSetShadow(playerid, TurfAttackTD[playerid][3], 0);
+        PlayerTextDrawFont(playerid, TurfAttackTD[playerid][3], 5);
+        PlayerTextDrawSetProportional(playerid, TurfAttackTD[playerid][3], 0);
+        PlayerTextDrawSetPreviewModel(playerid, TurfAttackTD[playerid][3], 1254);
+        PlayerTextDrawBackgroundColor(playerid, TurfAttackTD[playerid][3], 0x00000000);
+        PlayerTextDrawSetPreviewRot(playerid, TurfAttackTD[playerid][3], 0.000000, 0.000000, 0.000000, 1.000000);
+
+        TurfAttackTD[playerid][4] = CreatePlayerTextDraw(playerid, 310.600006, 25.662502, "LD_SPAC:white");
+        PlayerTextDrawTextSize(playerid, TurfAttackTD[playerid][4], 26.000000, -1.000000);
+        PlayerTextDrawAlignment(playerid, TurfAttackTD[playerid][4], 1);
+        PlayerTextDrawColor(playerid, TurfAttackTD[playerid][4], 255);
+        PlayerTextDrawSetShadow(playerid, TurfAttackTD[playerid][4], 0);
+        PlayerTextDrawBackgroundColor(playerid, TurfAttackTD[playerid][4], 255);
+        PlayerTextDrawFont(playerid, TurfAttackTD[playerid][4], 4);
+        PlayerTextDrawSetProportional(playerid, TurfAttackTD[playerid][4], 0);
+
+        TurfAttackTD[playerid][5] = CreatePlayerTextDraw(playerid, 296.899963, -22.925001, "");
+        PlayerTextDrawTextSize(playerid, TurfAttackTD[playerid][5], 55.000000, 48.000000);
+        PlayerTextDrawAlignment(playerid, TurfAttackTD[playerid][5], 1);
+        PlayerTextDrawColor(playerid, TurfAttackTD[playerid][5], -1);
+        PlayerTextDrawSetShadow(playerid, TurfAttackTD[playerid][5], 0);
+        PlayerTextDrawFont(playerid, TurfAttackTD[playerid][5], 5);
+        PlayerTextDrawSetProportional(playerid, TurfAttackTD[playerid][5], 0);
+        PlayerTextDrawSetPreviewModel(playerid, TurfAttackTD[playerid][5], 1317);
+        PlayerTextDrawBackgroundColor(playerid, TurfAttackTD[playerid][5], 0x00000000);
+        PlayerTextDrawSetPreviewRot(playerid, TurfAttackTD[playerid][5], 90.000000, 0.000000, 0.000000, 0.000000);
+
+        for(new i = 0; i < 6; i++)
+            PlayerTextDrawShow(playerid, TurfAttackTD[playerid][i]);
+    }
+    else
+    {
+        for(new i = 0; i < 6; i++)
+        {
+            if(TurfAttackTD[playerid][i] != INVALID_PLAYER_TEXT_DRAW)
+            {
+                PlayerTextDrawDestroy(playerid, TurfAttackTD[playerid][i]);
+                TurfAttackTD[playerid][i] = INVALID_PLAYER_TEXT_DRAW;
+            }
+        }
+    }
+    return 1;
+}
+
+forward AttackInTime(turfid);
+public AttackInTime(turfid)
+{
+    if(GetAttackerIDForTurf(turfid) == INVALID_PLAYER_ID)
+    {
+        SetPreciseTimer("RespawnTurfNPCs", 250, false, "i", turfid);
+        StaffMsg(0xfffc5cFF, "(turf) {FFFFFF}Napad na zonu \'{D1D1D1}\' nije zapoceo na vrijeme te su stoga svi njeni NPCevi resetovani.", turfid);
+    }
+
+    return 1;
+}
+
+forward CheckPause(playerid, turfid);
+public CheckPause(playerid, turfid)
+{
+    if(IsPlayerPaused_OW(playerid) || IsPlayerAFK(playerid))
+    {
+        StopTurfAttack(turfid, playerid, "Igrac koji je zauzimao je pauzirao igru vise od 4s.");
+    }
+    return 1;
+}
+
+forward CheckForNearPlayers(turfid);
+public CheckForNearPlayers(turfid)
+{
+    new
+        Float:X,
+        Float:Y,
+        Float:Z
+    ;
+    foreach(new i : TurfPlayers[turfid])
+    {
+        if(GetPlayerFactionID(i) == TurfInfo[turfid][g_TFID])
+            continue;
+        
+        GetPlayerPos(i, X, Y, Z);
+        GetClosestFreeNPC(turfid, i);
+        for(new j = 0; j < 2; j++)
+        {
+            if(tempNPCs[i][j] != INVALID_PLAYER_ID)
+            {
+                if(GetPlayerFactionID(i) != TurfInfo[turfid][g_TFID])
+                {
+                    FCNPC_Stop(tempNPCs[i][j]);
+                    FCNPC_StopAim(tempNPCs[i][j]);
+                    FCNPC::GoToCol(tempNPCs[i][j], X, Y, Z, FCNPC_MOVE_TYPE_SPRINT, FCNPC_MOVE_SPEED_SPRINT, FCNPC_MOVE_MODE_AUTO, 0.0, true, 4.0);
+                    g_FollowingPlayer[tempNPCs[i][j]] = i;
+                }
+                tempNPCs[i][j] = INVALID_PLAYER_ID;
+            }
+        }
+    }
+
+    return 1;
+}
+
+forward UpdateZoneFlash(playerid, turfid);
+public UpdateZoneFlash(playerid, turfid)
+{
+    new
+        attfid = GetPlayerFactionID(GetAttackerIDForTurf(turfid))
+    ;
+
+    if(attfid == -1)
+        return 1;
+    
+    ZoneFlashForPlayer(playerid, TurfInfo[turfid][g_TurfID], FACTIONS[attfid][f_hex]);
+
+    return true;
+}
+
+forward OnTurfsStreamInForPlayer(playerid);
+public OnTurfsStreamInForPlayer(playerid)
+{
+    new
+        color
+    ;
+    for(new i = 0; i < MAX_TURFS; i++)
+    {
+        if(TurfInfo[i][g_TFID] != -1)
+            color = HexToInt(FACTIONS[TurfInfo[i][g_TFID]][f_hex]) - 80;
+        else
+            color = TURF_FREE_COLOR;
+        
+        ShowZoneForPlayer(playerid, TurfInfo[i][g_TurfID], color);
+    }
+
+    return true;
+}
+
+// MySQL-callbacks;
+forward mysql_load_turfs();
+public mysql_load_turfs()
+{
+    cache_get_row_count(rows);
+    
+    if (!rows)
+        return 1;
+
+    new
+        turfid,
+        position[35+1],
+        positionNPC[300],
+        nameNPC[156+1],
+        Float:NPCpos[6][4],
+        tmpnpc,
+        tmpstr[6][25+1],
+        skinid
+    ;
+    
+    for(new i = 0; i < rows; i++)
+    {
+        // Check;
+        if(i >= MAX_TURFS)
+        {
+            print("U databazi je kreirano vise zona nego sto je naznaceno u skripti (>8), neke zone nisu ucitane!");
+            break;
+        }
+
+        // Loading-info;
+        cache_get_value_index_int(i, 0, turfid);
+
+        turfid -= 1; // Because of ID in Database
+
+        cache_get_value_index(i, 1, position, sizeof position);
+        cache_get_value_index_int(i, 2, TurfInfo[turfid][g_TFID]);
+        cache_get_value_index_int(i, 3, TurfInfo[turfid][g_TLevel]);
+        cache_get_value_index(i, 4, positionNPC, sizeof positionNPC);
+        cache_get_value_index(i, 5, nameNPC, sizeof nameNPC);
+        cache_get_value_index_int(i, 6, TurfInfo[turfid][g_TBenefit]);
+        cache_get_value_index_int(i, 7, TurfInfo[turfid][g_TBQuant]);
+
+        // Zone-creation;
+        sscanf(position, "p<|>ffff", TurfInfo[turfid][TminX], TurfInfo[turfid][TminY], TurfInfo[turfid][TmaxX], TurfInfo[turfid][TmaxY]);
+
+        TurfInfo[turfid][g_TArea] = CreateDynamicRectangle(TurfInfo[turfid][TminX], TurfInfo[turfid][TminY], TurfInfo[turfid][TmaxX], TurfInfo[turfid][TmaxY]);
+        TurfInfo[turfid][g_TurfID] = CreateZone(TurfInfo[turfid][TminX], TurfInfo[turfid][TmaxY], TurfInfo[turfid][TmaxX], TurfInfo[turfid][TminY]);
+
+        CreateZoneNumber(TurfInfo[turfid][g_TurfID], turfid, 0.7);
+        CreateZoneBorders(TurfInfo[turfid][g_TurfID]);
+        
+        g_TurfRemainingNPCs[turfid] = MAX_TURF_NPCS;
+        TurfInfo[turfid][g_TCooldown] = gettime();
+
+        // Benefit-room;
+        CreateEnterExit("Benefit Room", "Zona", BenefitRooms[turfid][E_BENEFIT_ROOM_X], BenefitRooms[turfid][E_BENEFIT_ROOM_Y], BenefitRooms[turfid][E_BENEFIT_ROOM_Z], 0.0, 1424.5356, 1559.1190, -37.6537, 352.8064, 0, 0, turfid, 0, 1254, 1254, TurfInfo[turfid][g_TFID]);
+
+        //BenefitActor[turfid] = CreateDynamicActor(24, 1421.4332, 1563.9635, -37.6537, 195.9699, true, 100.0, turfid);
+        CreateDynamic3DTextLabel("{FFFFFF}/preuzmi", 0, 1421.4332, 1563.9635, -37.6537, 50.0, INVALID_PLAYER_ID, INVALID_VEHICLE_ID, 0, turfid);
+
+        // NPC-connection;
+        sscanf(positionNPC,"p<|>ffffffffffffffffffffffff", NPCpos[0][0], NPCpos[0][1], NPCpos[0][2], NPCpos[0][3],
+                                                           NPCpos[1][0], NPCpos[1][1], NPCpos[1][2], NPCpos[1][3],
+                                                           NPCpos[2][0], NPCpos[2][1], NPCpos[2][2], NPCpos[2][3],
+                                                           NPCpos[3][0], NPCpos[3][1], NPCpos[3][2], NPCpos[3][3],
+                                                           NPCpos[4][0], NPCpos[4][1], NPCpos[4][2], NPCpos[4][3],
+                                                           NPCpos[5][0], NPCpos[5][1], NPCpos[5][2], NPCpos[5][3]);
+        //                     |---|---|---|---|---|---|
+
+        sscanf(nameNPC, "p<,>s[25]s[25]s[25]s[25]s[25]s[25]", tmpstr[0], tmpstr[1], tmpstr[2], tmpstr[3], tmpstr[4], tmpstr[5]);
+
+        skinid = (TurfInfo[turfid][g_TFID] != -1) ? GetFactionSkin(TurfInfo[turfid][g_TFID], 1) : 28;
+
+        for(new j = 0; j < MAX_TURF_NPCS; j++)
+        {
+            tmpnpc = FCNPC_Create(tmpstr[j]);
+            FCNPC_Spawn(tmpnpc, skinid, NPCpos[j][0], NPCpos[j][1], NPCpos[j][2]);
+            FCNPC_SetAngle(tmpnpc, NPCpos[j][3]);
+            FCNPC_SetWeapon(tmpnpc, 24);
+            FCNPC_UseInfiniteAmmo(tmpnpc, true);
+            FCNPC_SetHealth(tmpnpc, MAX_NPC_HEALTH);
+            g_NPCX[tmpnpc] = NPCpos[j][0];
+            g_NPCY[tmpnpc] = NPCpos[j][1];
+            g_NPCZ[tmpnpc] = NPCpos[j][2];
+            TurfNPC[tmpnpc] = true;
+            g_FollowingPlayer[tmpnpc] = INVALID_PLAYER_ID;
+            Iter_Add(g_TActors[turfid], tmpnpc);
+        }
+    }
+
+    g_TurfAttackTime = TURF_ATTACK_TIME; // 1min
+    printf("Successfully loaded %i turfs, each with %i NPCs (%i slots taken)", rows, MAX_TURF_NPCS, MAX_TURF_NPCS*rows);
+
+    return 1;
+}
+
+// Timer-callbacks;
+forward TurfAward();
+public TurfAward()
+{
+    for(new i = 0; i < MAX_TURFS; i++)
+    {
+        /*count = 0;
+        if(TurfInfo[i][g_TFID] == -1)
+            return 1;
+        
+        foreach(new j : TurfPlayers[i])
+        {
+            if(g_PlayerAttacking[j] == TurfInfo[i][g_TFID])
+            {
+                count++;
+            }
+        }
+
+        if(count > 0)
+            return 1;*/
+        
+        if(TurfInfo[i][g_TBenefit] == 0)
+        {
+            TurfInfo[i][g_TBQuant] += 50 + random(500);
+        }
+        else
+        {
+            TurfInfo[i][g_TBQuant] += 10 + random(5);
+        }
+
+        TurfInfo[i][g_TLevel] += 1;
+
+        mysql_format(gConn, upit_128, sizeof upit_128, "UPDATE turfs SET level = %i, benefitquant = %i WHERE turfID = %d", TurfInfo[i][g_TLevel], TurfInfo[i][g_TBQuant], i+1);
+        mysql_tquery(gConn, upit_128);
+    }
+    return 1;
+}
+
+forward TurfInProgress(turfid, attackerid, attackfid, defendfid);
+public TurfInProgress(turfid, attackerid, attackfid, defendfid)
+{
+    g_TurfAttackTime--;
+    new
+        minutes,
+        timeformat,
+        str[6+1]
+    ;
+
+    if(g_TurfAttackTime <= 0)
+    {
+        TurfTaken(turfid, attackerid, attackfid, defendfid);
+        DeletePreciseTimer(g_TurfTimer[turfid]);
+    }
+
+    timeformat = g_TurfAttackTime;
+    while(timeformat >= 60)
+    {
+        timeformat -= 60;
+        minutes++;
+    }
+
+    format(str, sizeof str, "%02i:%02i", minutes, timeformat);
+
+    foreach(new i : Player)
+    {
+        if(GetPlayerFactionID(i) == attackfid || GetPlayerFactionID(i) == defendfid)
+        {
+            PlayerTextDrawSetString(i, TurfAttackTD[i][1], str);
+            PlayerTextDrawShow(i, TurfAttackTD[i][1]);
+        }
+    }
+    return 1;
+}
+
+// Additional-functions;
+stock GetTurfFactionID(turfid)
+{
+    return TurfInfo[turfid][g_TFID];
+}
+
+stock GetTurfByBenefitActor(playerid)
+{
+    new
+        Float:x,
+        Float:y,
+        Float:z
+    ;
+    for(new i = 0; i < MAX_TURFS; i++)
+    {
+        GetDynamicActorPos(BenefitActor[i], x, y, z);
+        if(IsPlayerInRangeOfPoint(playerid, 5.0, x, y, z) && GetDynamicActorVirtualWorld(BenefitActor[i]) == GetPlayerVirtualWorld(playerid))
+            return i;
+    }
+
+    return INVALID_TURF_ID;
+}
+
+stock GetBenefitTypeByID(bid)
+{
+    new
+        strreturn[10+1]
+    ;
+    if(bid == 0)
+    {
+        format(strreturn, sizeof strreturn, "Novac");
+    }
+    else
+    {
+        format(strreturn, sizeof strreturn, "Materijali");
+    }
+    return strreturn;
+}
+
+stock CountTurfsOwnedByGroup(fid)
+{
+    new
+        number
+    ;
+
+    for(new i = 0; i < MAX_TURFS; i++)
+    {
+        if(TurfInfo[i][g_TFID] == fid)
+            number++;
+    }
+
+    return number;
+}
+
+stock CountTurfs()
+{
+    return MAX_TURFS;
+}
+
+stock IsTurfWarActiveForPlayer(playerid)
+{
+    if(TurfAttackTD[playerid][0] != INVALID_PLAYER_TEXT_DRAW)
+        return 1;
+    
+    return 0;
+}
+
+stock IsPlayerOnActiveTurf(playerid)
+{
+    if(OnActiveTurf[playerid])
+        return 1;
+    
+    return 0;
+}
+
+stock GetClosestFreeNPC(turfid, playerid, bool:both = true)
+{
+    static enum E_LIST_NPC
+    {
+        E_LIST_NPC_ID,
+        Float:E_LIST_NPC_DISTANCE,
+    }
+    static npclist[MAX_TURF_NPCS][E_LIST_NPC],
+        Float:X,
+        Float:Y,
+        Float:Z;
+
+    GetPlayerPos(playerid, X, Y, Z);
+    new count = 0;
+    
+    foreach(new i : g_TActors[turfid])
+    {
+        npclist[count][E_LIST_NPC_ID] = i;
+        npclist[count][E_LIST_NPC_DISTANCE] = GetPlayerDistanceFromPoint(i, X, Y, Z);
+        count++;
+    }
+    
+    SortDeepArray(npclist, E_LIST_NPC_DISTANCE, .order = SORT_ASC);
+
+    for(new i = 0; i < count; i++)
+    {
+        if(g_FollowingPlayer[npclist[i][E_LIST_NPC_ID]] == INVALID_PLAYER_ID && !FCNPC_IsDead(npclist[i][E_LIST_NPC_ID]))
+        {
+            if(tempNPCs[playerid][0] == INVALID_PLAYER_ID)
+            {
+                tempNPCs[playerid][0] = npclist[i][E_LIST_NPC_ID];
+                if(both)
+                    continue;
+                else
+                    break;
+            }
+            else if(tempNPCs[playerid][1] == INVALID_PLAYER_ID)
+            {
+                tempNPCs[playerid][1] = npclist[i][E_LIST_NPC_ID];
+                break;
+            }
+        }
+    }
+
+    return 1;
+}
+
+stock GetAttackerIDForTurf(turfid)
+{
+    foreach(new i : TurfPlayers[turfid])
+    {
+        if(IsPlayerAttacking(i))
+            return i;
+    }
+
+    return INVALID_PLAYER_ID;
+}
+
+forward RespawnEveryTurfNPCs();
+public RespawnEveryTurfNPCs()
+{
+    new
+        skinid
+    ;
+    
+    for(new j = 0; j < MAX_TURFS; j++)
+    {
+        skinid = (TurfInfo[j][g_TFID] != -1) ? GetFactionSkin(TurfInfo[j][g_TFID], 1) : 28;
+
+        foreach(new i : g_TActors[j])
+        {
+            FCNPC_Spawn(i, 28, g_NPCX[i], g_NPCY[i], g_NPCZ[i]);
+            FCNPC_Respawn(i);
+            FCNPC_SetSkin(i, skinid);
+            FCNPC_SetHealth(i, MAX_NPC_HEALTH);
+            FCNPC_SetPosition(i, g_NPCX[i], g_NPCY[i], g_NPCZ[i]);
+            FCNPC_StopAim(i);
+            g_FollowingPlayer[i] = INVALID_PLAYER_ID;
+        }
+        DestroyDynamicActor(BenefitActor[j]);
+        BenefitActor[j] = CreateDynamicActor(skinid, 1421.4332, 1563.9635, -37.6537, 195.9699, true, 100.0, j);
+        g_TurfRemainingNPCs[j] = MAX_TURF_NPCS;
+    }
+
+    print("Uspjesno respawnovani NPCevi na svim zonama.");
+    
+    return 1;
+}
+
+forward RespawnTurfNPCs(turfid);
+public RespawnTurfNPCs(turfid)
+{
+    new
+        skinid = (TurfInfo[turfid][g_TFID] != -1) ? GetFactionSkin(TurfInfo[turfid][g_TFID], 1) : 28
+    ;
+    
+    foreach(new i : g_TActors[turfid])
+    {
+        FCNPC_Spawn(i, 28, g_NPCX[i], g_NPCY[i], g_NPCZ[i]);
+        FCNPC_Respawn(i);
+        FCNPC_SetSkin(i, skinid);
+        FCNPC_SetHealth(i, MAX_NPC_HEALTH);
+        FCNPC_SetPosition(i, g_NPCX[i], g_NPCY[i], g_NPCZ[i]);
+        FCNPC_StopAim(i);
+        g_FollowingPlayer[i] = INVALID_PLAYER_ID;
+    }
+    g_TurfRemainingNPCs[turfid] = MAX_TURF_NPCS;
+
+    if(turfid != -1)
+    {
+        foreach(new i : Player)
+        {
+            if(GetPlayerFactionID(i) == TurfInfo[turfid][g_TFID] && Iter_Contains(TurfPlayers[turfid], i))
+                Iter_Remove(TurfPlayers[turfid], i);
+        }
+    }
+
+    SetPreciseTimer("CheckForNearPlayers", 250, false, "i", turfid);
+
+    return 1;
+}
+
+stock AwardFactionPlayers(fid)
+{
+    foreach(new i : Player)
+    {
+        if(GetPlayerFactionID(i) == fid)
+        {
+            GivePlayerMoney(i, 3000);
+            GameTextForPlayer(i, "~g~+3000", 3000, 3);
+        }
+    }
+    return 1;
+}
+
+stock TurfTaken(turfid, playerid, wonfid, lostfid)
+{
+    TurfInfo[turfid][g_TFID] = GetPlayerFactionID(playerid);
+    TurfInfo[turfid][g_TLevel] = 0;
+    if(lostfid == -1)
+        TurfInfo[turfid][g_TBQuant] = 0;
+    g_TurfRemainingNPCs[turfid] = MAX_TURF_NPCS;
+    g_PlayerAttacking[playerid] = INVALID_TURF_ID;
+    ZoneStopFlashForAll(TurfInfo[turfid][g_TurfID]);
+    ShowZoneForAll(TurfInfo[turfid][g_TurfID], HexToInt(FACTIONS[wonfid][f_hex])-80);
+    foreach(new i : Player)
+    {
+        if(GetPlayerFactionID(i) == wonfid && !IsPlayerNPC(i))
+        {
+            SendClientMessagef(i, 0xfffc5cFF, "(turf) {FFFFFF}Uspjesno ste zauzeli zonu / {d6d6d6}ID: %i", turfid);
+            AttackTextDraws(i, false);
+        }
+        else if(lostfid != -1 && GetPlayerFactionID(i) == lostfid && !IsPlayerNPC(i))
+        {
+            SendClientMessagef(i, 0xfffc5cFF, "(turf) {FFFFFF}Neuspjesno ste odbranili zonu / {d6d6d6}ID: %i", turfid);
+            AttackTextDraws(i, false);
+        }
+    }
+    mysql_format(gConn, upit_128, sizeof upit_128, "UPDATE turfs SET factionID = '%i', level = '%i' WHERE turfID = %d", TurfInfo[turfid][g_TFID], TurfInfo[turfid][g_TLevel], turfid+1);
+    mysql_tquery(gConn, upit_128);
+
+    g_TurfAttackTime = TURF_ATTACK_TIME;
+
+    SetPreciseTimer("RespawnTurfNPCs", 250, false, "i", turfid);
+    return 1;
+}
+
+stock StopTurfAttack(turfid, attacker, const reason[], bool:cooldown = true)
+{
+    foreach(new i : Player)
+    {
+        if((GetPlayerFactionID(i) == TurfInfo[turfid][g_TFID] || GetPlayerFactionID(i) == GetPlayerFactionID(attacker)) && !IsPlayerNPC(i))
+        {
+            SendClientMessagef(i, 0xfffc5cFF, "(turf) {FFFFFF}Zauzimanje zone prekinuto / {d6d6d6}%s", reason);
+            AttackTextDraws(i, false);
+        }
+    }
+
+    SetPreciseTimer("RespawnTurfNPCs", 250, false, "i", turfid);
+    
+    g_PlayerAttacking[attacker] = INVALID_TURF_ID;
+    g_TurfRemainingNPCs[turfid] = MAX_TURF_NPCS;
+
+    if(g_TurfAttackTime != TURF_ATTACK_TIME)
+    {
+        DeletePreciseTimer(g_TurfTimer[turfid]);
+        g_TurfAttackTime = TURF_ATTACK_TIME;
+        ZoneStopFlashForAll(TurfInfo[turfid][g_TurfID]);
+    }
+
+    if(cooldown)
+        TurfInfo[turfid][g_TCooldown] = gettime() + 60000 * 30; // 30min cooldown
+    
+    return 1;
+}
+
+stock GetTurfByNPC(npcid)
+{
+    for(new i = 0; i < MAX_TURFS; i++)
+    {
+        if(Iter_Contains(g_TActors[i], npcid))
+        {
+            return i;
+        }
+    }
+    return INVALID_TURF_ID;
+}
+
+stock GetTurfByArea(areaid)
+{
+    if(!IsValidDynamicArea(areaid))
+        return INVALID_TURF_ID;
+    
+    for(new i = 0; i < MAX_TURFS; i++)
+    {
+        if(areaid == TurfInfo[i][g_TArea])
+            return i;
+    }
+    return INVALID_TURF_ID;
+}
+
+stock IsPlayerAttacking(playerid)
+{
+    if(g_PlayerAttacking[playerid] != INVALID_TURF_ID)
+        return 1;
+    
+    return 0;
+}
+
+stock GetPlayerAttackingTID(playerid)
+{
+    return g_PlayerAttacking[playerid];
+}
+
+// Commands;
+
+alias:takequant("preuzmi")
+CMD:takequant(playerid, const params[])
+{
+    new
+        turfid,
+        quant
+    ;
+
+    if(GetPlayerFactionID(playerid) == -1)
+        return ErrorMsg(playerid, GRESKA_NEMADOZVOLU);
+
+    turfid = GetTurfByBenefitActor(playerid);
+    
+    if(turfid != INVALID_TURF_ID)
+    {
+        if(TurfInfo[turfid][g_TFID] != GetPlayerFactionID(playerid))
+            return ErrorMsg(playerid, "Ova zona nije u vasem vlasnistvu.");
+
+        if(PI[playerid][p_org_rank] != RANK_LEADER)
+            return ErrorMsg(playerid, GRESKA_NEMADOZVOLU);
+
+        if(!sscanf(params, "i", quant))
+        {
+            if(quant > TurfInfo[turfid][g_TBQuant])
+                return ErrorMsg(playerid, "Nema toliko kolicine u zalihama.");
+
+            TurfInfo[turfid][g_TBQuant] -= quant;
+
+            if(TurfInfo[turfid][g_TBenefit] == 1)
+            {
+                PlayerMoneyAdd(playerid, quant);
+                InfoMsg(playerid, "Uspjesno ste uzeli {D1D1D1}$%i{FFFFFF} iz zaliha vase zone {D1D1D1}(ID %i)", quant, turfid);
+                AdminMsg(0xfffc5cFF, "(turf-info) {FFFFFF}Igrac \"{D1D1D1}%s{FFFFFF}\" je uzeo $%i iz zone \"{D1D1D1}%i{FFFFFF}\"", ime_rp[playerid], quant, turfid);
+            }
+            else
+            {
+                BP_PlayerItemAdd(playerid, ITEM_RAW_MATS, quant);
+                InfoMsg(playerid, "Uspjesno ste uzeli {D1D1D1}%i{FFFFFF} materijala iz zaliha vase zone {D1D1D1}(ID %i)", quant, turfid);
+                AdminMsg(0xfffc5cFF, "(turf-info) {FFFFFF}Igrac \"{D1D1D1}%s{FFFFFF}\" je uzeo %i materijala iz zone \"{D1D1D1}%i{FFFFFF}\"", ime_rp[playerid], quant, turfid);
+            }
+
+            mysql_format(gConn, upit_128, sizeof upit_128, "UPDATE turfs SET benefitquant = %i WHERE turfID = %d", TurfInfo[turfid][g_TBQuant], turfid+1);
+            mysql_tquery(gConn, upit_128);
+        }
+        else
+            Koristite(playerid, "preuzmi [kolicina]");
+    }
+
+    return 1;
+}
+
+flags:turfcontrol(FLAG_ADMIN_6)
+alias:turfcontrol("turfedit", "tc")
+CMD:turfcontrol(playerid)
+{
+    new
+        str[90*MAX_TURFS+1]
+    ;
+
+    format(str, sizeof str, "Zona\tOrganizacija\tLevel");
+
+    for(new i = 0; i < MAX_TURFS; i++)
+        format(str, sizeof str, "%s\nTurf {61B4FF}( %i )\t{FFFFFF}Org {61B4FF}( %i )\t{FFFFFF}Lvl {61B4FF}( %i )", str, i, TurfInfo[i][g_TFID], TurfInfo[i][g_TLevel]);
+
+    ShowPlayerDialog(playerid, 1, DIALOG_STYLE_TABLIST_HEADERS, "Turf Control", str, "Dalje", "Nazad");
+
+    return 1;
+}
+
+flags:ttp(FLAG_HELPER_1)
+CMD:ttp(playerid, const params[])
+{
+    new
+        turfid,
+        Float:Z
+    ;
+
+    if(!sscanf(params, "i", turfid))
+    {
+        if(turfid == -1 || turfid >= MAX_TURFS)
+            return 1;
+
+        CA_FindZ_For2DCoord((TurfInfo[turfid][TminX]+TurfInfo[turfid][TmaxX])/2, (TurfInfo[turfid][TminY]+TurfInfo[turfid][TmaxY])/2, Z);
+        SetPlayerPos(playerid, (TurfInfo[turfid][TminX]+TurfInfo[turfid][TmaxX])/2, (TurfInfo[turfid][TminY]+TurfInfo[turfid][TmaxY])/2, Z+0.8);
+    }
+
+    return 1;
+}
+
+/*
+    How this system works?
+    You have to enter the turf and kill all NPCs in that area to start attacking it.
+    You mustn't leave that area (leave by foot, disconnect, die) if you want to keep attacking.
+    Otherwise, the attack will stop and you'll not be able to attack that turf in the next 30 minutes.
+
+    Kako sistem tadi?
+    Moraš ući u zonu i ubiti sve NPCeve u toj zoni da bi je započeo napad.
+    Ne smiješ izaći iz zone (nogama, disconnectom, srmću) ako želiš da nastaviš napadati.
+    Uostalom, napad će stati i nećeš moći napasti tu zonu narednih 30 minuta.
+*/
