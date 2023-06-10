@@ -1,0 +1,10 @@
+    tdBurglaryTip = TextDrawCreate(468.333282, 322.325775, "Brzo pritiskaj ~g~levi klik !!!~n~~w~Pritisni ~r~~k~~PED_SPRINT~ ~w~da prekines");
+    TextDrawLetterSize(tdBurglaryTip, 0.269666, 1.334518);
+    TextDrawTextSize(tdBurglaryTip, 839.000000, 0.000000);
+    TextDrawAlignment(tdBurglaryTip, 1);
+    TextDrawColor(tdBurglaryTip, -1);
+    TextDrawSetShadow(tdBurglaryTip, 0);
+    TextDrawSetOutline(tdBurglaryTip, -1);
+    TextDrawBackgroundColor(tdBurglaryTip, 255);
+    TextDrawFont(tdBurglaryTip, 2);
+    TextDrawSetProportional(tdBurglaryTip, 1);

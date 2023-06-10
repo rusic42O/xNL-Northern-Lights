@@ -1,0 +1,31 @@
+	tdDeathList[0] = TextDrawCreate(555.735290, 289.970428, "_");
+	TextDrawLetterSize(tdDeathList[0], 0.168999, 1.056592);
+	TextDrawAlignment(tdDeathList[0], 3);
+	TextDrawColor(tdDeathList[0], -1);
+	TextDrawSetShadow(tdDeathList[0], 0);
+	TextDrawSetOutline(tdDeathList[0], -1);
+	TextDrawBackgroundColor(tdDeathList[0], 255);
+	TextDrawFont(tdDeathList[0], 1);
+	TextDrawSetProportional(tdDeathList[0], 1);
+
+	tdDeathList[1] = TextDrawCreate(564.203735, 289.970428, "_");
+	TextDrawLetterSize(tdDeathList[1], 0.168999, 1.056592);
+	TextDrawTextSize(tdDeathList[1], 0.000000, 500.000000);
+	TextDrawAlignment(tdDeathList[1], 2);
+	TextDrawColor(tdDeathList[1], -16776961);
+	TextDrawSetShadow(tdDeathList[1], 0);
+	TextDrawSetOutline(tdDeathList[1], -1);
+	TextDrawBackgroundColor(tdDeathList[1], 255);
+	TextDrawFont(tdDeathList[1], 1);
+	TextDrawSetProportional(tdDeathList[1], 1);
+
+	tdDeathList[2] = TextDrawCreate(571.401977, 289.970428, "_");
+	TextDrawLetterSize(tdDeathList[2], 0.168999, 1.056592);
+	TextDrawTextSize(tdDeathList[2], 500.000000, 0.000000);
+	TextDrawAlignment(tdDeathList[2], 1);
+	TextDrawColor(tdDeathList[2], -1);
+	TextDrawSetShadow(tdDeathList[2], 0);
+	TextDrawSetOutline(tdDeathList[2], -1);
+	TextDrawBackgroundColor(tdDeathList[2], 255);
+	TextDrawFont(tdDeathList[2], 1);
+	TextDrawSetProportional(tdDeathList[2], 1);

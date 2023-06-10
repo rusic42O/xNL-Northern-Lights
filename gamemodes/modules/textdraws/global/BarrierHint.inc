@@ -1,0 +1,11 @@
+    tdBarrierHint = TextDrawCreate(210.000000, 350.000000, "Koristite komande na ekranu da pomerate i rotirate prepreku.~n~Za pomeranje kamere, drzite tipku ~y~SPACE.~n~~w~Da sacuvate izmene, kliknite na ~y~SAVE ~w~ikonicu na ekranu.~n~~w~Da odustanete, pritisnite ~y~ESC. ~w~Za brisanje upisite ~r~/prepreka.");
+    TextDrawBackgroundColor(tdBarrierHint, 255);
+    TextDrawFont(tdBarrierHint, 2);
+    TextDrawLetterSize(tdBarrierHint, 0.190000, 1.200000);
+    TextDrawColor(tdBarrierHint, -1);
+    TextDrawSetOutline(tdBarrierHint, 0);
+    TextDrawSetProportional(tdBarrierHint, 1);
+    TextDrawSetShadow(tdBarrierHint, 1);
+    TextDrawUseBox(tdBarrierHint, 1);
+    TextDrawBoxColor(tdBarrierHint, 50);
+    TextDrawTextSize(tdBarrierHint, 480.000000, 0.000000);

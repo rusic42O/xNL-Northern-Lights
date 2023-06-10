@@ -1,0 +1,153 @@
+	tdMakeGun[0] = TextDrawCreate(155.834579, 180.083374, "LD_SPAC:white");
+	TextDrawTextSize(tdMakeGun[0], 330.000000, 130.000000);
+	TextDrawAlignment(tdMakeGun[0], 1);
+	TextDrawColor(tdMakeGun[0], 170);
+	TextDrawSetShadow(tdMakeGun[0], 0);
+	TextDrawBackgroundColor(tdMakeGun[0], 255);
+	TextDrawFont(tdMakeGun[0], 4);
+	TextDrawSetProportional(tdMakeGun[0], 0);
+
+	tdMakeGun[1] = TextDrawCreate(162.393875, 187.083343, "LD_SPAC:white");
+	TextDrawTextSize(tdMakeGun[1], 316.000000, 116.000000);
+	TextDrawAlignment(tdMakeGun[1], 1);
+	TextDrawColor(tdMakeGun[1], -2139062152);
+	TextDrawSetShadow(tdMakeGun[1], 0);
+	TextDrawBackgroundColor(tdMakeGun[1], 255);
+	TextDrawFont(tdMakeGun[1], 4);
+	TextDrawSetProportional(tdMakeGun[1], 0);
+
+	tdMakeGun[2] = TextDrawCreate(169.864578, 196.833343, "LD_SPAC:white");
+	TextDrawTextSize(tdMakeGun[2], 68.000000, 67.000000);
+	TextDrawAlignment(tdMakeGun[2], 1);
+	TextDrawColor(tdMakeGun[2], 170);
+	TextDrawSetShadow(tdMakeGun[2], 0);
+	TextDrawBackgroundColor(tdMakeGun[2], 255);
+	TextDrawFont(tdMakeGun[2], 4);
+	TextDrawSetProportional(tdMakeGun[2], 0);
+
+	tdMakeGun[3] = TextDrawCreate(247.364486, 196.833343, "LD_SPAC:white");
+	TextDrawTextSize(tdMakeGun[3], 68.000000, 67.000000);
+	TextDrawAlignment(tdMakeGun[3], 1);
+	TextDrawColor(tdMakeGun[3], 170);
+	TextDrawSetShadow(tdMakeGun[3], 0);
+	TextDrawBackgroundColor(tdMakeGun[3], 255);
+	TextDrawFont(tdMakeGun[3], 4);
+	TextDrawSetProportional(tdMakeGun[3], 0);
+
+	tdMakeGun[4] = TextDrawCreate(324.864410, 196.833343, "LD_SPAC:white");
+	TextDrawTextSize(tdMakeGun[4], 68.000000, 67.000000);
+	TextDrawAlignment(tdMakeGun[4], 1);
+	TextDrawColor(tdMakeGun[4], 170);
+	TextDrawSetShadow(tdMakeGun[4], 0);
+	TextDrawBackgroundColor(tdMakeGun[4], 255);
+	TextDrawFont(tdMakeGun[4], 4);
+	TextDrawSetProportional(tdMakeGun[4], 0);
+
+	tdMakeGun[5] = TextDrawCreate(402.364410, 196.833343, "LD_SPAC:white");
+	TextDrawTextSize(tdMakeGun[5], 68.000000, 67.000000);
+	TextDrawAlignment(tdMakeGun[5], 1);
+	TextDrawColor(tdMakeGun[5], 170);
+	TextDrawSetShadow(tdMakeGun[5], 0);
+	TextDrawBackgroundColor(tdMakeGun[5], 255);
+	TextDrawFont(tdMakeGun[5], 4);
+	TextDrawSetProportional(tdMakeGun[5], 0);
+
+	tdMakeGun[6] = TextDrawCreate(135.000000, 190.000000, "\\");
+	TextDrawTextSize(tdMakeGun[6], 90.000000, 90.000000);
+	TextDrawAlignment(tdMakeGun[6], 1);
+	TextDrawColor(tdMakeGun[6], -1);
+    TextDrawBackgroundColor(tdMakeGun[6], 0);
+	TextDrawSetShadow(tdMakeGun[6], 0);
+	TextDrawFont(tdMakeGun[6], 5);
+	TextDrawSetProportional(tdMakeGun[6], 0);
+	TextDrawSetPreviewModel(tdMakeGun[6], 348);
+	TextDrawSetPreviewRot(tdMakeGun[6], 0.000000, 0.000000, 180.000000, 1.000000);
+
+	tdMakeGun[7] = TextDrawCreate(217.500000, 190.000000, "\\");
+	TextDrawTextSize(tdMakeGun[7], 90.000000, 90.000000);
+	TextDrawAlignment(tdMakeGun[7], 1);
+	TextDrawColor(tdMakeGun[7], -94);
+    TextDrawBackgroundColor(tdMakeGun[7], 0);
+	TextDrawSetShadow(tdMakeGun[7], 0);
+	TextDrawFont(tdMakeGun[7], 5);
+	TextDrawSetProportional(tdMakeGun[7], 0);
+	TextDrawSetPreviewModel(tdMakeGun[7], 353);
+	TextDrawSetPreviewRot(tdMakeGun[7], 0.000000, -7.000000, 180.000000, 1.500000);
+
+	tdMakeGun[8] = TextDrawCreate(300.000000, 190.000000, "\\");
+	TextDrawTextSize(tdMakeGun[8], 90.000000, 90.000000);
+	TextDrawAlignment(tdMakeGun[8], 1);
+	TextDrawColor(tdMakeGun[8], -1);
+    TextDrawBackgroundColor(tdMakeGun[8], 0);
+	TextDrawSetShadow(tdMakeGun[8], 0);
+	TextDrawFont(tdMakeGun[8], 5);
+	TextDrawSetProportional(tdMakeGun[8], 0);
+	TextDrawSetPreviewModel(tdMakeGun[8], 356);
+	TextDrawSetPreviewRot(tdMakeGun[8], 0.000000, 0.000000, 180.000000, 2.200000);
+
+	tdMakeGun[9] = TextDrawCreate(377.500000, 190.000000, "\\");
+	TextDrawTextSize(tdMakeGun[9], 90.000000, 90.000000);
+	TextDrawAlignment(tdMakeGun[9], 1);
+	TextDrawColor(tdMakeGun[9], -88);
+    TextDrawBackgroundColor(tdMakeGun[9], 0);
+	TextDrawSetShadow(tdMakeGun[9], 0);
+	TextDrawFont(tdMakeGun[9], 5);
+	TextDrawSetProportional(tdMakeGun[9], 0);
+	TextDrawSetPreviewModel(tdMakeGun[9], 355);
+	TextDrawSetPreviewRot(tdMakeGun[9], 0.000000, 0.000000, 180.000000, 2.299998);
+
+	tdMakeGun[10] = TextDrawCreate(170.000000, 200.000000, "~N~~N~~N~~N~~N~~n~1.5kg mats~N~ 24   ammo~N~");
+	TextDrawLetterSize(tdMakeGun[10], 0.236486, 1.203333);
+	TextDrawTextSize(tdMakeGun[10], 235.679626, 90.000000);
+	TextDrawAlignment(tdMakeGun[10], 1);
+	TextDrawColor(tdMakeGun[10], -1);
+	TextDrawSetShadow(tdMakeGun[10], 0);
+	TextDrawBackgroundColor(tdMakeGun[10], 255);
+	TextDrawFont(tdMakeGun[10], 2);
+	TextDrawSetProportional(tdMakeGun[10], 0);
+	TextDrawSetSelectable(tdMakeGun[10], true);
+
+	tdMakeGun[11] = TextDrawCreate(247.500000, 200.000000, "~N~~N~~N~~N~~N~~n~3kg mats~N~100   ammo~N~");
+	TextDrawLetterSize(tdMakeGun[11], 0.236486, 1.203333);
+	TextDrawTextSize(tdMakeGun[11], 314.000000, 90.000000);
+	TextDrawAlignment(tdMakeGun[11], 1);
+	TextDrawColor(tdMakeGun[11], -1);
+	TextDrawSetShadow(tdMakeGun[11], 0);
+	TextDrawBackgroundColor(tdMakeGun[11], 255);
+	TextDrawFont(tdMakeGun[11], 2);
+	TextDrawSetProportional(tdMakeGun[11], 0);
+	TextDrawSetSelectable(tdMakeGun[11], true);
+
+	tdMakeGun[12] = TextDrawCreate(325.000000, 200.000000, "~N~~N~~N~~N~~N~~n~4.5kg mats~N~ 85   ammo~N~");
+	TextDrawLetterSize(tdMakeGun[12], 0.236486, 1.203333);
+	TextDrawTextSize(tdMakeGun[12], 392.000000, 90.000000);
+	TextDrawAlignment(tdMakeGun[12], 1);
+	TextDrawColor(tdMakeGun[12], -1);
+	TextDrawSetShadow(tdMakeGun[12], 0);
+	TextDrawBackgroundColor(tdMakeGun[12], 255);
+	TextDrawFont(tdMakeGun[12], 2);
+	TextDrawSetProportional(tdMakeGun[12], 0);
+	TextDrawSetSelectable(tdMakeGun[12], true);
+
+	tdMakeGun[13] = TextDrawCreate(402.500000, 200.000000, "~N~~N~~N~~N~~N~~n~4.5kg mats~N~ 85   ammo~N~");
+	TextDrawLetterSize(tdMakeGun[13], 0.236486, 1.203333);
+	TextDrawTextSize(tdMakeGun[13], 469.000000, 90.000000);
+	TextDrawAlignment(tdMakeGun[13], 1);
+	TextDrawColor(tdMakeGun[13], -1);
+	TextDrawSetShadow(tdMakeGun[13], 0);
+	TextDrawBackgroundColor(tdMakeGun[13], 255);
+	TextDrawFont(tdMakeGun[13], 2);
+	TextDrawSetProportional(tdMakeGun[13], 0);
+	TextDrawSetSelectable(tdMakeGun[13], true);
+
+	tdMakeGun[14] = TextDrawCreate(473.192169, 180.083465, "X");
+	TextDrawLetterSize(tdMakeGun[14], 0.400000, 1.600000);
+	TextDrawTextSize(tdMakeGun[14], 484.000000, 15.000000);
+	TextDrawAlignment(tdMakeGun[14], 1);
+	TextDrawColor(tdMakeGun[14], -16776961);
+	TextDrawSetShadow(tdMakeGun[14], 0);
+	TextDrawSetOutline(tdMakeGun[14], 1);
+	TextDrawBackgroundColor(tdMakeGun[14], 255);
+	TextDrawFont(tdMakeGun[14], 1);
+	TextDrawSetProportional(tdMakeGun[14], 1);
+	TextDrawSetSelectable(tdMakeGun[14], true);

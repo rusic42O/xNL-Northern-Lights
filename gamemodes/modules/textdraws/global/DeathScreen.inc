@@ -1,0 +1,43 @@
+	tdDeathScreen[2] = TextDrawCreate(750.000000, -50.000000, "_");
+	TextDrawBackgroundColor(tdDeathScreen[2], 255);
+	TextDrawFont(tdDeathScreen[2], 1);
+	TextDrawLetterSize(tdDeathScreen[2], 0.500000, 65.000000);
+	TextDrawColor(tdDeathScreen[2], -1);
+	TextDrawSetOutline(tdDeathScreen[2], 0);
+	TextDrawSetProportional(tdDeathScreen[2], 1);
+	TextDrawSetShadow(tdDeathScreen[2], 1);
+	TextDrawUseBox(tdDeathScreen[2], 1);
+	TextDrawBoxColor(tdDeathScreen[2], 2013266040);
+	TextDrawTextSize(tdDeathScreen[2], -170.000000, 0.000000);
+	
+	tdDeathScreen[0] = TextDrawCreate(700.000000, -11.000000, "_");
+	TextDrawBackgroundColor(tdDeathScreen[0], 255);
+	TextDrawFont(tdDeathScreen[0], 1);
+	TextDrawLetterSize(tdDeathScreen[0], 0.500000, 13.000000);
+	TextDrawColor(tdDeathScreen[0], -1);
+	TextDrawSetOutline(tdDeathScreen[0], 0);
+	TextDrawSetProportional(tdDeathScreen[0], 1);
+	TextDrawSetShadow(tdDeathScreen[0], 1);
+	TextDrawUseBox(tdDeathScreen[0], 1);
+	TextDrawBoxColor(tdDeathScreen[0], 255);
+	TextDrawTextSize(tdDeathScreen[0], -40.000000, 0.000000);
+
+	tdDeathScreen[1] = TextDrawCreate(702.000000, 342.000000, "_");
+	TextDrawBackgroundColor(tdDeathScreen[1], 255);
+	TextDrawFont(tdDeathScreen[1], 1);
+	TextDrawLetterSize(tdDeathScreen[1], 0.500000, 13.000000);
+	TextDrawColor(tdDeathScreen[1], -1);
+	TextDrawSetOutline(tdDeathScreen[1], 0);
+	TextDrawSetProportional(tdDeathScreen[1], 1);
+	TextDrawSetShadow(tdDeathScreen[1], 1);
+	TextDrawUseBox(tdDeathScreen[1], 1);
+	TextDrawBoxColor(tdDeathScreen[1], 255);
+	TextDrawTextSize(tdDeathScreen[1], -40.000000, 0.000000);
+
+	tdDeathScreen[3] = TextDrawCreate(268.000000, 181.000000, "WASTED");
+	TextDrawBackgroundColor(tdDeathScreen[3], 255);
+	TextDrawFont(tdDeathScreen[3], 0);
+	TextDrawLetterSize(tdDeathScreen[3], 0.699999, 3.000000);
+	TextDrawColor(tdDeathScreen[3], -1);
+	TextDrawSetOutline(tdDeathScreen[3], 1);
+	TextDrawSetProportional(tdDeathScreen[3], 1);

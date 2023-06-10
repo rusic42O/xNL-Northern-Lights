@@ -1,0 +1,11 @@
+    tdFurnitureHint = TextDrawCreate(210.000000, 350.000000, "Koristite komande na ekranu da pomerate i rotirate objekat.~n~Za pomeranje kamere, drzite tipku ~y~SPACE.~n~~w~Da sacuvate izmene, kliknite na ~y~SAVE ~w~ikonicu na ekranu.~n~~w~Da izbrisete objekat i dobijete novac natrag, pritisnite tipku ~y~ESC.");
+    TextDrawBackgroundColor(tdFurnitureHint, 255);
+    TextDrawFont(tdFurnitureHint, 2);
+    TextDrawLetterSize(tdFurnitureHint, 0.190000, 1.200000);
+    TextDrawColor(tdFurnitureHint, -1);
+    TextDrawSetOutline(tdFurnitureHint, 0);
+    TextDrawSetProportional(tdFurnitureHint, 1);
+    TextDrawSetShadow(tdFurnitureHint, 1);
+    TextDrawUseBox(tdFurnitureHint, 1);
+    TextDrawBoxColor(tdFurnitureHint, 50);
+    TextDrawTextSize(tdFurnitureHint, 480.000000, 0.000000);
